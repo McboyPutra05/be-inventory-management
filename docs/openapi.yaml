@@ -1,0 +1,314 @@
+openapi: 3.0.3
+info:
+  title: Inventory Management REST API
+  description: RESTful API for inventory item management with JWT authentication and atomic concurrency control.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Development Server
+
+paths:
+  /health:
+    get:
+      summary: Check system and database health
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service and database are healthy
+        '503':
+          description: Database unreachable
+
+  /auth/register:
+    post:
+      summary: Register a new user account
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Malformed JSON request
+        '409':
+          description: Email already registered
+        '422':
+          description: Validation error
+
+  /auth/login:
+    post:
+      summary: Authenticate user and receive JWT token
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+        '401':
+          description: Invalid email or password
+        '422':
+          description: Validation error
+
+  /items:
+    post:
+      summary: Create a new inventory item
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateItemRequest'
+      responses:
+        '201':
+          description: Item created
+        '401':
+          description: Unauthorized
+        '422':
+          description: Validation error
+    get:
+      summary: List inventory items with search and pagination
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of items
+        '401':
+          description: Unauthorized
+        '422':
+          description: Invalid pagination parameters
+
+  /items/{id}:
+    get:
+      summary: Retrieve item by UUID
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item details
+        '400':
+          description: Invalid UUID
+        '401':
+          description: Unauthorized
+        '404':
+          description: Item not found
+    put:
+      summary: Fully update an inventory item
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+      responses:
+        '200':
+          description: Item updated
+        '400':
+          description: Invalid UUID
+        '401':
+          description: Unauthorized
+        '404':
+          description: Item not found
+        '422':
+          description: Validation error
+    delete:
+      summary: Delete an item permanently
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Item deleted
+        '400':
+          description: Invalid UUID
+        '401':
+          description: Unauthorized
+        '404':
+          description: Item not found
+
+  /items/{id}/stock:
+    patch:
+      summary: Atomically adjust item stock using delta
+      tags:
+        - Items
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustStockRequest'
+      responses:
+        '200':
+          description: Stock adjusted successfully
+        '400':
+          description: Invalid UUID or delta is zero
+        '401':
+          description: Unauthorized
+        '404':
+          description: Item not found
+        '409':
+          description: Insufficient stock (stock cannot be negative)
+        '422':
+          description: Validation error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    CreateItemRequest:
+      type: object
+      required:
+        - name
+        - stock
+        - price
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 1000
+        stock:
+          type: integer
+          minimum: 0
+        price:
+          type: integer
+          minimum: 0
+
+    UpdateItemRequest:
+      type: object
+      required:
+        - name
+        - stock
+        - price
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 1000
+        stock:
+          type: integer
+          minimum: 0
+        price:
+          type: integer
+          minimum: 0
+
+    AdjustStockRequest:
+      type: object
+      required:
+        - delta
+      properties:
+        delta:
+          type: integer
+          description: Relative stock change (must not be 0)
+
